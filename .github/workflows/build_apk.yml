@@ -28,6 +28,24 @@ jobs:
           channel: 'stable'
           cache: true
 
+      - name: Generate Fresh Flutter Project Structure
+        run: |
+          # Backup hamara custom code
+          mkdir -p temp_lib
+          cp -r lib/* temp_lib/
+          cp pubspec.yaml temp_pubspec.yaml
+
+          # Purane folders delete karo jo error de rahe hain
+          rm -rf android ios linux macos windows web lib pubspec.yaml
+
+          # Naya official template banao jisme sare native folders honge
+          flutter create . --org com.pdfpoint.app --project-name pdf_point --platforms=android
+
+          # Apna custom code wapas wahan daal do
+          rm -rf lib/*
+          cp -r temp_lib/* lib/
+          cp temp_pubspec.yaml pubspec.yaml
+
       - name: Install Dependencies
         run: flutter pub get
 
