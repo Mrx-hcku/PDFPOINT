@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
 import 'package:path_provider/path_provider.dart';
-import 'package:url_launcher/url_launcher.dart';
+import 'package:flutter_pdfview/flutter_pdfview.dart';
+import 'dart:io';
 import '../utils/error_helper.dart';
 
 class PdfViewerScreen extends StatefulWidget {
@@ -15,31 +16,45 @@ class PdfViewerScreen extends StatefulWidget {
 
 class _PdfViewerScreenState extends State<PdfViewerScreen> {
   bool _isDownloading = false;
-  double _downloadProgress = 0.0; // 0.0 to 1.0
+  double _downloadProgress = 0.0;
   String? statusMessage;
   bool isError = false;
 
   final Dio _dio = Dio();
 
-  Future<void> _openOnline() async {
-    try {
-      final uri = Uri.parse(widget.pdfUrl);
-      final launched = await launchUrl(uri, mode: LaunchMode.externalApplication);
-      if (!launched) {
-        setState(() {
-          isError = true;
-          statusMessage = "Could not open the PDF link. No app available to view it.";
-        });
-      }
-    } catch (e) {
-      setState(() {
-        isError = true;
-        statusMessage = describeError(e);
-      });
+  // Helper to get local file path if already downloaded
+  Future<String?> _getLocalFilePath() async {
+    final dir = await getApplicationDocumentsDirectory();
+    final safeName = widget.pdfTitle.replaceAll(RegExp(r'[^a-zA-Z0-9_\- ]'), '_');
+    final savePath = '${dir.path}/$safeName.pdf';
+    if (await File(savePath).exists()) {
+      return savePath;
+    }
+    return null;
+  }
+
+  // Open inside app using flutter_pdfview
+  Future<void> _openInAppViewer() async {
+    String? localPath = await _getLocalFilePath();
+
+    if (localPath == null) {
+      // If not downloaded yet, download it first temporarily or prompt download
+      await _downloadToDevice(openAfterDownload: true);
+    } else {
+      _navigateToViewer(localPath);
     }
   }
 
-  Future<void> _downloadToDevice() async {
+  void _navigateToViewer(String localPath) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => LocalPdfScreen(pdfPath: localPath, pdfTitle: widget.pdfTitle),
+      ),
+    );
+  }
+
+  Future<void> _downloadToDevice({bool openAfterDownload = false}) async {
     setState(() {
       _isDownloading = true;
       _downloadProgress = 0.0;
@@ -69,6 +84,10 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
         isError = false;
         statusMessage = "Downloaded successfully to app storage:\n$savePath";
       });
+
+      if (openAfterDownload) {
+        _navigateToViewer(savePath);
+      }
     } on DioException catch (e) {
       setState(() {
         _isDownloading = false;
@@ -112,7 +131,7 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
               ),
               const SizedBox(height: 24),
 
-              // ---- Read online (opens in browser/PDF app) ----
+              // ---- Read In-App using flutter_pdfview ----
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton.icon(
@@ -120,9 +139,9 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
                     backgroundColor: const Color(0xFF6366F1),
                     padding: const EdgeInsets.symmetric(vertical: 14),
                   ),
-                  onPressed: _isDownloading ? null : _openOnline,
-                  icon: const Icon(Icons.open_in_new, color: Colors.white),
-                  label: const Text("Read PDF", style: TextStyle(color: Colors.white)),
+                  onPressed: _isDownloading ? null : _openInAppViewer,
+                  icon: const Icon(Icons.menu_book, color: Colors.white),
+                  label: const Text("Read PDF In-App", style: TextStyle(color: Colors.white)),
                 ),
               ),
               const SizedBox(height: 12),
@@ -135,7 +154,7 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
                     backgroundColor: const Color(0xFF334155),
                     padding: const EdgeInsets.symmetric(vertical: 14),
                   ),
-                  onPressed: _isDownloading ? null : _downloadToDevice,
+                  onPressed: _isDownloading ? null : () => _downloadToDevice(openAfterDownload: false),
                   icon: _isDownloading
                       ? const SizedBox(
                           width: 16,
@@ -187,6 +206,92 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+// --- Separate Screen to Render PDF Locally ---
+class LocalPdfScreen extends StatefulWidget {
+  final String pdfPath;
+  final String pdfTitle;
+  const LocalPdfScreen({super.key, required this.pdfPath, required this.pdfTitle});
+
+  @override
+  State<LocalPdfScreen> createState() => _LocalPdfScreenState();
+}
+
+class _LocalPdfScreenState extends State<LocalPdfScreen> {
+  int? _totalPages = 0;
+  int? _currentPage = 0;
+  bool _isReady = false;
+  String _errorMessage = '';
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        backgroundColor: const Color(0xFF1E293B),
+        title: Text(widget.pdfTitle, style: const TextStyle(color: Colors.white, fontSize: 14)),
+        iconTheme: const IconThemeData(color: Colors.white),
+        actions: [
+          if (_totalPages != null && _isReady)
+            Center(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                child: Text(
+                  "${(_currentPage ?? 0) + 1} / $_totalPages",
+                  style: const TextStyle(color: Colors.white, fontSize: 13),
+                ),
+              ),
+            ),
+        ],
+      ),
+      body: Stack(
+        children: [
+          PDFView(
+            filePath: widget.pdfPath,
+            enableSwipe: true,
+            swipeHorizontal: false,
+            autoSpacing: true,
+            pageFling: true,
+            pageSnap: true,
+            onRender: (pages) {
+              setState(() {
+                _totalPages = pages;
+                _isReady = true;
+              });
+            },
+            onError: (error) {
+              setState(() {
+                _errorMessage = error.toString();
+              });
+            },
+            onPageError: (page, error) {
+              setState(() {
+                _errorMessage = '$page: ${error.toString()}';
+              });
+            },
+            onPageChanged: (int? page, int? total) {
+              setState(() {
+                _currentPage = page;
+              });
+            },
+          ),
+          if (!_isReady && _errorMessage.isEmpty)
+            const Center(child: CircularProgressIndicator(color: Color(0xFF6366F1))),
+          if (_errorMessage.isNotEmpty)
+            Center(
+              child: Padding(
+                padding: const EdgeInsets.all(16.0),
+                child: Text(
+                  "Error loading PDF:\n$_errorMessage",
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(color: Colors.redAccent),
+                ),
+              ),
+            ),
+        ],
       ),
     );
   }
