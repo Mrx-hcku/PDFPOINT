@@ -29,7 +29,7 @@ jobs:
           channel: 'stable'
           cache: false
 
-      - name: Generate Fresh Flutter Project Structure with SDK 35
+      - name: Generate Fresh Flutter Project Structure
         run: |
           mkdir -p temp_lib
           cp -r lib/* temp_lib/
@@ -43,17 +43,20 @@ jobs:
           cp -r temp_lib/* lib/
           cp temp_pubspec.yaml pubspec.yaml
 
-      - name: Ensure INTERNET permission and SDK 35 for PDFView
+      - name: Ensure INTERNET permission and Safe SDK 35 Update
         run: |
           MANIFEST="android/app/src/main/AndroidManifest.xml"
           if [ -f "$MANIFEST" ] && ! grep -q "android.permission.INTERNET" "$MANIFEST"; then
             sed -i '/<manifest /a\    <uses-permission android:name="android.permission.INTERNET"/>' "$MANIFEST"
           fi
           
+          # Safely update compileSdkVersion and targetSdkVersion using flutter's local configuration or gradle fallback
           GRADLE_FILE="android/app/build.gradle"
           if [ -f "$GRADLE_FILE" ]; then
-            sed -i 's/compileSdkVersion [0-9]*/compileSdkVersion 35/g' "$GRADLE_FILE"
-            sed -i 's/targetSdkVersion [0-9]*/targetSdkVersion 35/g' "$GRADLE_FILE"
+            sed -i 's/flutter.compileSdkVersion/35/g' "$GRADLE_FILE" || true
+            sed -i 's/flutter.targetSdkVersion/35/g' "$GRADLE_FILE" || true
+            sed -i 's/compileSdkVersion = [0-9]*/compileSdkVersion = 35/g' "$GRADLE_FILE" || true
+            sed -i 's/targetSdkVersion = [0-9]*/targetSdkVersion = 35/g' "$GRADLE_FILE" || true
           fi
 
       - name: Force clean everything before building
