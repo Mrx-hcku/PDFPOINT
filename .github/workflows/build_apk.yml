@@ -29,33 +29,19 @@ jobs:
           channel: 'stable'
           cache: false
 
-      - name: Generate Fresh Flutter Project Structure
-        run: |
-          mkdir -p temp_lib
-          cp -r lib/* temp_lib/
-          cp pubspec.yaml temp_pubspec.yaml
-
-          rm -rf android ios linux macos windows web lib pubspec.yaml
-
-          flutter create . --org com.pdfpoint.app --project-name pdf_point --platforms=android
-
-          rm -rf lib/*
-          cp -r temp_lib/* lib/
-          cp temp_pubspec.yaml pubspec.yaml
-
-      # ---- THE FIX: force INTERNET permission into the freshly generated manifest ----
-      # flutter create's default AndroidManifest.xml does NOT include INTERNET
-      # permission for release builds (Flutter only auto-injects it for debug/hot-reload).
-      # Without this, every network call in a --release APK fails with
-      # "SocketException: Failed host lookup", no matter what the code or device does.
-      - name: Ensure INTERNET permission is present
+      - name: Ensure INTERNET permission and SDK 35 for PDFView
         run: |
           MANIFEST="android/app/src/main/AndroidManifest.xml"
-          if ! grep -q "android.permission.INTERNET" "$MANIFEST"; then
+          if [ -f "$MANIFEST" ] && ! grep -q "android.permission.INTERNET" "$MANIFEST"; then
             sed -i '/<manifest /a\    <uses-permission android:name="android.permission.INTERNET"/>' "$MANIFEST"
           fi
-          echo "----- Final AndroidManifest.xml -----"
-          cat "$MANIFEST"
+          
+          # Update compileSdkVersion to 35 for flutter_pdfview compatibility
+          GRADLE_FILE="android/app/build.gradle"
+          if [ -f "$GRADLE_FILE" ]; then
+            sed -i 's/compileSdkVersion [0-9]*/compileSdkVersion 35/g' "$GRADLE_FILE"
+            sed -i 's/targetSdkVersion [0-9]*/targetSdkVersion 35/g' "$GRADLE_FILE"
+          fi
 
       - name: Force clean everything before building
         run: |
@@ -76,3 +62,4 @@ jobs:
         with:
           name: app-release-${{ github.run_number }}
           path: build/app/outputs/flutter-apk/app-release.apk
+          
