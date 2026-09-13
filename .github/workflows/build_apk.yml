@@ -29,6 +29,20 @@ jobs:
           channel: 'stable'
           cache: false
 
+      - name: Generate Fresh Flutter Project Structure with SDK 35
+        run: |
+          mkdir -p temp_lib
+          cp -r lib/* temp_lib/
+          cp pubspec.yaml temp_pubspec.yaml
+
+          rm -rf android ios linux macos windows web lib pubspec.yaml
+
+          flutter create . --org com.pdfpoint.app --project-name pdf_point --platforms=android
+
+          rm -rf lib/*
+          cp -r temp_lib/* lib/
+          cp temp_pubspec.yaml pubspec.yaml
+
       - name: Ensure INTERNET permission and SDK 35 for PDFView
         run: |
           MANIFEST="android/app/src/main/AndroidManifest.xml"
@@ -36,7 +50,6 @@ jobs:
             sed -i '/<manifest /a\    <uses-permission android:name="android.permission.INTERNET"/>' "$MANIFEST"
           fi
           
-          # Update compileSdkVersion to 35 for flutter_pdfview compatibility
           GRADLE_FILE="android/app/build.gradle"
           if [ -f "$GRADLE_FILE" ]; then
             sed -i 's/compileSdkVersion [0-9]*/compileSdkVersion 35/g' "$GRADLE_FILE"
