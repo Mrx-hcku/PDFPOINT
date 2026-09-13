@@ -1,0 +1,78 @@
+name: Build Android APK
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch: {}
+
+jobs:
+  build:
+    name: Build APK with Flutter
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Java Development Kit
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.19.x'
+          channel: 'stable'
+          cache: false
+
+      - name: Generate Fresh Flutter Project Structure
+        run: |
+          mkdir -p temp_lib
+          cp -r lib/* temp_lib/
+          cp pubspec.yaml temp_pubspec.yaml
+
+          rm -rf android ios linux macos windows web lib pubspec.yaml
+
+          flutter create . --org com.pdfpoint.app --project-name pdf_point --platforms=android
+
+          rm -rf lib/*
+          cp -r temp_lib/* lib/
+          cp temp_pubspec.yaml pubspec.yaml
+
+      # ---- THE FIX: force INTERNET permission into the freshly generated manifest ----
+      # flutter create's default AndroidManifest.xml does NOT include INTERNET
+      # permission for release builds (Flutter only auto-injects it for debug/hot-reload).
+      # Without this, every network call in a --release APK fails with
+      # "SocketException: Failed host lookup", no matter what the code or device does.
+      - name: Ensure INTERNET permission is present
+        run: |
+          MANIFEST="android/app/src/main/AndroidManifest.xml"
+          if ! grep -q "android.permission.INTERNET" "$MANIFEST"; then
+            sed -i '/<manifest /a\    <uses-permission android:name="android.permission.INTERNET"/>' "$MANIFEST"
+          fi
+          echo "----- Final AndroidManifest.xml -----"
+          cat "$MANIFEST"
+
+      - name: Force clean everything before building
+        run: |
+          flutter clean
+          rm -rf ~/.gradle/caches
+          rm -rf ~/.pub-cache
+          rm -rf .dart_tool
+          rm -rf build
+
+      - name: Install Dependencies (fresh)
+        run: flutter pub get
+
+      - name: Build Release APK (no cached build artifacts)
+        run: flutter build apk --release --no-pub
+
+      - name: Upload APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-release-${{ github.run_number }}
+          path: build/app/outputs/flutter-apk/app-release.apk
