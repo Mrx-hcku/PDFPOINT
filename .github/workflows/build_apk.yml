@@ -25,38 +25,37 @@ jobs:
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.19.x'
+          flutter-version: 'stable'
           channel: 'stable'
           cache: false
 
-      - name: Replace Old Android Folder with Modern Gradle Structure
+      - name: Generate Fresh Flutter Project Structure
         run: |
-          # Create a separate temp project to generate a fresh, compatible Android folder
-          flutter create temp_project --org com.pdfpoint.app --project-name pdf_point --platforms=android
-          
-          # Remove the old unsupported android folder from your repo
-          rm -rf android
-          
-          # Bring the fresh, modern android folder into your repo
-          mv temp_project/android android
-          
-          # Clean up temp project
-          rm -rf temp_project
+          mkdir -p temp_lib
+          cp -r lib/* temp_lib/
+          cp pubspec.yaml temp_pubspec.yaml
 
-      - name: Ensure INTERNET permission and SDK 35
+          rm -rf android ios linux macos windows web lib pubspec.yaml
+
+          flutter create . --org com.pdfpoint.app --project-name pdf_point --platforms=android
+
+          rm -rf lib/*
+          cp -r temp_lib/* lib/
+          cp temp_pubspec.yaml pubspec.yaml
+
+      # ---- THE FIX: force INTERNET permission into the freshly generated manifest ----
+      # flutter create's default AndroidManifest.xml does NOT include INTERNET
+      # permission for release builds (Flutter only auto-injects it for debug/hot-reload).
+      # Without this, every network call in a --release APK fails with
+      # "SocketException: Failed host lookup", no matter what the code or device does.
+      - name: Ensure INTERNET permission is present
         run: |
           MANIFEST="android/app/src/main/AndroidManifest.xml"
-          if [ -f "$MANIFEST" ] && ! grep -q "android.permission.INTERNET" "$MANIFEST"; then
+          if ! grep -q "android.permission.INTERNET" "$MANIFEST"; then
             sed -i '/<manifest /a\    <uses-permission android:name="android.permission.INTERNET"/>' "$MANIFEST"
           fi
-
-          GRADLE_FILE="android/app/build.gradle"
-          if [ -f "$GRADLE_FILE" ]; then
-            sed -i 's/compileSdkVersion .*/compileSdkVersion 35/g' "$GRADLE_FILE"
-            sed -i 's/targetSdkVersion .*/targetSdkVersion 35/g' "$GRADLE_FILE"
-            sed -i 's/flutter.compileSdkVersion/35/g' "$GRADLE_FILE"
-            sed -i 's/flutter.targetSdkVersion/35/g' "$GRADLE_FILE"
-          fi
+          echo "----- Final AndroidManifest.xml -----"
+          cat "$MANIFEST"
 
       - name: Force clean everything before building
         run: |
@@ -66,10 +65,10 @@ jobs:
           rm -rf .dart_tool
           rm -rf build
 
-      - name: Install Dependencies
+      - name: Install Dependencies (fresh)
         run: flutter pub get
 
-      - name: Build Release APK
+      - name: Build Release APK (no cached build artifacts)
         run: flutter build apk --release --no-pub
 
       - name: Upload APK Artifact
@@ -77,4 +76,3 @@ jobs:
         with:
           name: app-release-${{ github.run_number }}
           path: build/app/outputs/flutter-apk/app-release.apk
-          
