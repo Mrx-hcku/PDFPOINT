@@ -42,7 +42,12 @@ jobs:
           cp -r temp_lib/* lib/
           cp temp_pubspec.yaml pubspec.yaml
 
-      - name: Ensure INTERNET permission is present
+      # ---- THE FIX: force INTERNET permission into the freshly generated manifest ----
+      # flutter create's default AndroidManifest.xml does NOT include INTERNET
+      # permission for release builds (Flutter only auto-injects it for debug/hot-reload).
+      # Without this, every network call in a --release APK fails with
+      # "SocketException: Failed host lookup", no matter what the code or device does.
+      - name: Ensure INTERNET permission and SDK 36
         run: |
           MANIFEST="android/app/src/main/AndroidManifest.xml"
           if ! grep -q "android.permission.INTERNET" "$MANIFEST"; then
@@ -50,6 +55,24 @@ jobs:
           fi
           echo "----- Final AndroidManifest.xml -----"
           cat "$MANIFEST"
+
+          # Force compileSdk/targetSdk to 36 (file_picker's latest version requires it).
+          # Newer Flutter versions generate build.gradle.kts (Kotlin DSL);
+          # older ones generate build.gradle (Groovy) — handle both.
+          KTS="android/app/build.gradle.kts"
+          GROOVY="android/app/build.gradle"
+
+          if [ -f "$KTS" ]; then
+            sed -i 's/compileSdk = flutter.compileSdkVersion/compileSdk = 36/' "$KTS"
+            sed -i 's/targetSdk = flutter.targetSdkVersion/targetSdk = 36/' "$KTS"
+            echo "----- Patched build.gradle.kts -----"
+            cat "$KTS"
+          elif [ -f "$GROOVY" ]; then
+            sed -i 's/compileSdkVersion flutter.compileSdkVersion/compileSdkVersion 36/' "$GROOVY"
+            sed -i 's/targetSdkVersion flutter.targetSdkVersion/targetSdkVersion 36/' "$GROOVY"
+            echo "----- Patched build.gradle -----"
+            cat "$GROOVY"
+          fi
 
       - name: Force clean everything before building
         run: |
