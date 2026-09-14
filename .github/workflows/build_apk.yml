@@ -29,46 +29,28 @@ jobs:
           channel: 'stable'
           cache: false
 
-      - name: Generate Fresh Project & Fix Gradle Version
+      - name: Patch SDK 35 and Internet Permission Directly
         run: |
-          mkdir -p temp_lib
-          cp -r lib/* temp_lib/
-          cp pubspec.yaml temp_pubspec.yaml
-
-          rm -rf android ios linux macos windows web lib pubspec.yaml
-
-          flutter create . --org com.pdfpoint.app --project-name pdf_point --platforms=android
-
-          rm -rf lib/*
-          cp -r temp_lib/* lib/
-          cp temp_pubspec.yaml pubspec.yaml
-
-          # Force Gradle wrapper to version 8.3 to completely avoid unsupported gradle errors
-          GRADLE_WRAPPER="android/gradle/wrapper/gradle-wrapper.properties"
-          if [ -f "$GRADLE_WRAPPER" ]; then
-            echo "distributionUrl=https\://services.gradle.org/distributions/gradle-8.3-bin.zip" > "$GRADLE_WRAPPER"
-          fi
-
-      - name: Ensure INTERNET permission is present
-        run: |
+          # 1. Ensure INTERNET permission in AndroidManifest.xml
           MANIFEST="android/app/src/main/AndroidManifest.xml"
           if [ -f "$MANIFEST" ] && ! grep -q "android.permission.INTERNET" "$MANIFEST"; then
             sed -i '/<manifest /a\    <uses-permission android:name="android.permission.INTERNET"/>' "$MANIFEST"
           fi
 
-      - name: Force clean everything before building
-        run: |
-          flutter clean
-          rm -rf ~/.gradle/caches
-          rm -rf ~/.pub-cache
-          rm -rf .dart_tool
-          rm -rf build
+          # 2. Force compileSdkVersion and targetSdkVersion to 35 in build.gradle
+          GRADLE_FILE="android/app/build.gradle"
+          if [ -f "$GRADLE_FILE" ]; then
+            sed -i 's/compileSdkVersion .*/compileSdkVersion 35/g' "$GRADLE_FILE"
+            sed -i 's/targetSdkVersion .*/targetSdkVersion 35/g' "$GRADLE_FILE"
+            sed -i 's/flutter.compileSdkVersion/35/g' "$GRADLE_FILE"
+            sed -i 's/flutter.targetSdkVersion/35/g' "$GRADLE_FILE"
+          fi
 
       - name: Install Dependencies
         run: flutter pub get
 
       - name: Build Release APK
-        run: flutter build apk --release --no-pub
+        run: flutter build apk --release
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
