@@ -25,7 +25,6 @@ jobs:
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: 'stable'
           channel: 'stable'
           cache: false
 
@@ -43,11 +42,6 @@ jobs:
           cp -r temp_lib/* lib/
           cp temp_pubspec.yaml pubspec.yaml
 
-      # ---- THE FIX: force INTERNET permission into the freshly generated manifest ----
-      # flutter create's default AndroidManifest.xml does NOT include INTERNET
-      # permission for release builds (Flutter only auto-injects it for debug/hot-reload).
-      # Without this, every network call in a --release APK fails with
-      # "SocketException: Failed host lookup", no matter what the code or device does.
       - name: Ensure INTERNET permission is present
         run: |
           MANIFEST="android/app/src/main/AndroidManifest.xml"
